@@ -10,6 +10,8 @@ class ChartType(Enum):
     SCATTER = "scatter"
     AREA = "area"
     HISTOGRAM = "histogram"
+    STACKED_BAR = "stacked_bar"
+    STACKED_AREA = "stacked_area"
 
 class DataAnalyzer:
     def __init__(self):
@@ -19,7 +21,9 @@ class DataAnalyzer:
             ChartType.PIE: self._should_use_pie,
             ChartType.SCATTER: self._should_use_scatter,
             ChartType.AREA: self._should_use_area,
-            ChartType.HISTOGRAM: self._should_use_histogram
+            ChartType.HISTOGRAM: self._should_use_histogram,
+            ChartType.STACKED_BAR: self._should_use_stacked_bar,
+            ChartType.STACKED_AREA: self._should_use_stacked_area
         }
     
     def analyze_data(self, data: pd.DataFrame) -> Dict[str, Any]:
@@ -140,6 +144,47 @@ class DataAnalyzer:
         
         return min(score, 1.0)
     
+    def _should_use_stacked_bar(self, data: pd.DataFrame, analysis: Dict, target_column: str = None) -> float:
+        """Score for stacked bar chart suitability."""
+        score = 0.0
+        
+        # Good for multiple categories showing composition
+        if (len(analysis['categorical_columns']) >= 1 and 
+            len(analysis['numeric_columns']) >= 2):
+            score += 0.8
+        
+        # Good for showing part-to-whole relationships
+        if target_column and target_column in analysis['numeric_columns']:
+            score += 0.6
+        
+        # Good for comparing totals across categories
+        if analysis['categorical_columns']:
+            cat_cols = [col for col in analysis['categorical_columns'] if col != target_column]
+            if cat_cols:
+                max_unique = max(analysis['unique_counts'][col] for col in cat_cols)
+                if max_unique <= 8:
+                    score += 0.4
+        
+        return min(score, 1.0)
+    
+    def _should_use_stacked_area(self, data: pd.DataFrame, analysis: Dict, target_column: str = None) -> float:
+        """Score for stacked area chart suitability."""
+        score = 0.0
+        
+        # Good for time series with composition
+        if analysis['datetime_columns'] and len(analysis['numeric_columns']) >= 2:
+            score += 0.9
+        
+        # Good for showing cumulative totals
+        if len(analysis['numeric_columns']) >= 2:
+            score += 0.7
+        
+        # Good for trend analysis with composition
+        if analysis['datetime_columns']:
+            score += 0.5
+        
+        return min(score, 1.0)
+    
     def _should_use_area(self, data: pd.DataFrame, analysis: Dict, target_column: str = None) -> float:
         """Score for area chart suitability."""
         score = 0.0
@@ -201,6 +246,20 @@ class DataAnalyzer:
             config.update({
                 'x_column': numeric_cols[0] if len(numeric_cols) > 0 else data.columns[0],
                 'y_column': numeric_cols[1] if len(numeric_cols) > 1 else data.columns[1],
+            })
+        
+        elif chart_type == ChartType.STACKED_BAR:
+            config.update({
+                'x_column': analysis['categorical_columns'][0] if analysis['categorical_columns'] else data.columns[0],
+                'y_columns': analysis['numeric_columns'][:2],  # Use up to 2 numeric columns for stacking
+                'orientation': 'vertical'
+            })
+        
+        elif chart_type == ChartType.STACKED_AREA:
+            config.update({
+                'x_column': analysis['datetime_columns'][0] if analysis['datetime_columns'] else data.columns[0],
+                'y_columns': analysis['numeric_columns'][:3],  # Use up to 3 numeric columns for stacking
+                'stacked': True
             })
         
         elif chart_type == ChartType.AREA:
